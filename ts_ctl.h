@@ -76,5 +76,6 @@ struct	_EIT_CONTROL{
 	char	freeCA;				// スクランブル
 	int	duration;			// 時間
 	time_t	start_time;			// 開始時刻
+	int	version_number;			// バージョン番号
 };
 #endif

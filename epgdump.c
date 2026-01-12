@@ -287,7 +287,7 @@ void	dumpCSV(FILE *outfile)
 			fprintf(outfile,",");
                 }
             }
-			fprintf(outfile,"%s\n",eitcur->freeCA?"有料":"");
+			fprintf(outfile,"%s,%d\n",eitcur->freeCA?"有料":"",eitcur->version_number);
 			eitcur=eitcur->next;
 		}
 		svtcur=svtcur->next;
@@ -362,8 +362,8 @@ void	dumpXML(FILE *outfile)
 			
 			fprintf(outfile, "  <programme start=\"%s +0900\" stop=\"%s +0900\" channel=\"%s_%d\" ",
 				cstarttime, cendtime, getBSCSGR(svtcur),svtcur->event_id);
-			fprintf(outfile, "event_id=\"%d\" duration=\"%d\">\n",
-				eitcur->event_id,eitcur->duration);
+			fprintf(outfile, "event_id=\"%d\" duration=\"%d\" version_number=\"%d\">\n",
+				eitcur->event_id,eitcur->duration,eitcur->version_number);
 
 			fprintf(outfile, "    <title lang=\"ja_JP\">%s</title>\n", title);
 			
@@ -524,7 +524,8 @@ void dumpJSON(FILE *outfile)
 			fprintf(outfile,"],");
 
 			fprintf(outfile,"\"freeCA\":%s,",eitcur->freeCA?"true":"false");
-			fprintf(outfile,"\"event_id\":%d",eitcur->event_id);
+			fprintf(outfile,"\"event_id\":%d,",eitcur->event_id);
+			fprintf(outfile,"\"version_number\":%d",eitcur->version_number);
 			eitcur = eitcur->next ;
 			fprintf(outfile,"}");
 			eitcanma=",";

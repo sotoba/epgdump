@@ -548,6 +548,9 @@ int dumpEIT2(unsigned char *ptr, SVT_CONTROL *svttop,EITCHECK *chk)
             return EIT_OK;
         }
         cur = searcheit(eittop, eith.service_id, eitb.event_id);
+        if (cur) {
+            cur->version_number = eith.version_number;
+        }
 
         ptr += len;
         loop_len -= len;
@@ -602,6 +605,7 @@ int dumpEIT2(unsigned char *ptr, SVT_CONTROL *svttop,EITCHECK *chk)
                             cur->freeCA = eitb.free_CA_mode;
                             cur->duration = getDurationSec(eitb.duration);
                             cur->start_time = getStartTime(eitb.start_time);
+                            cur->version_number = eith.version_number;
                             enqueue(eittop, cur);
                             if ((eith.table_id >= 0x50) && (!svtcur->haveeitschedule)) {
                                 svtcur->haveeitschedule=1;
