@@ -77,5 +77,6 @@ struct	_EIT_CONTROL{
 	int	duration;			// 時間
 	time_t	start_time;			// 開始時刻
 	int	version_number;			// バージョン番号
+	int	original_network_id;		// OriginalNetworkID
 };
 #endif
