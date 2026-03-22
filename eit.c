@@ -4,6 +4,9 @@
 
 #include "eit.h"
 
+// enqueue_sdt関数の宣言（sdt.cで定義）
+extern void enqueue_sdt(SVT_CONTROL *top, SVT_CONTROL *sdtptr);
+
 char		*subtitle_cnv_str[] = {
     NULL
 };
@@ -485,8 +488,21 @@ int dumpEIT2(unsigned char *ptr, SVT_CONTROL *svttop,EITCHECK *chk)
 #ifdef DEBUG
         printf("Not Match %x  %x %x \n",eith.transport_stream_id,eith.original_network_id,eith.service_id);
 #endif
-        // 別のストリーム？？
-        return EIT_SDTNOTFOUND;
+        // SDTに含まれていないチャンネルのEITも処理する（BS/CS/地上波すべてに対応）
+        // 地方局などでもSDTに含まれていないチャンネルのEITが存在する場合があるため、
+        // 放送種別に関係なく処理する
+        svtcur = calloc(1, sizeof(SVT_CONTROL));
+        svtcur->transport_stream_id = eith.transport_stream_id;
+        svtcur->original_network_id = eith.original_network_id;
+        svtcur->event_id = eith.service_id;  // Piro77版ではevent_idがservice_idとして使用される
+        memset(svtcur->servicename, 0, sizeof(svtcur->servicename));  // サービス名は空で初期化（後でSDTから取得される可能性がある）
+        svtcur->eit = calloc(1, sizeof(EIT_CONTROL));
+        // enqueue_sdt関数を使用してリストに追加
+        enqueue_sdt(svttop, svtcur);
+        if ((eith.table_id >= 0x50) && (!svtcur->haveeitschedule)) {
+            svtcur->haveeitschedule = 1;
+        }
+        eittop = svtcur->eit;
     }
 #ifdef DEBUG
     printf("SV  0x%x Table  [0x%x] \n",eith.service_id,eith.table_id);
@@ -524,7 +540,7 @@ int dumpEIT2(unsigned char *ptr, SVT_CONTROL *svttop,EITCHECK *chk)
                             }
                             if (eith.section_number == 1) { // 次のイベントとマッチ
                                 if (chk->starttime > 0) { //check
-                                    printf("%d\n",getStartTime(eitb.start_time)-chk->starttime);
+                                    printf("%ld\n",getStartTime(eitb.start_time)-chk->starttime);
                                     return EIT_CHECKOK;
                                 }
                             }
@@ -586,7 +602,7 @@ int dumpEIT2(unsigned char *ptr, SVT_CONTROL *svttop,EITCHECK *chk)
                                 strcat(cur->audiodesc[ix].langcode,"_");
                                 strncat(cur->audiodesc[ix].langcode,audioComponentDesc.ISO_639_language_code2,3);
                             }
-                            if (audioComponentDesc.content)
+                            if (audioComponentDesc.content[0] != '\0')
                                 cur->audiodesc[ix].audiodesc = strdup(audioComponentDesc.content);
                         }
                     }
