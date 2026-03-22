@@ -54,6 +54,9 @@ struct	_SVT_CONTROL{
 	char		haveeitschedule;		// EITスケジュールがあるか。
 	int		frequency;
     int     remote_control_key_id;              // リモコンID（地デジ）
+	/* NIT TS 情報記述子(0xCD)の transmission_type_info。0=未取得。
+	 * TR-B14: 0x01=地上デジタルTV(フルセグ), 0x02=地上デジタル音声, 0x03=1セグ */
+	unsigned char	transmission_type_info;
 };
 
 struct	_EIT_CONTROL{

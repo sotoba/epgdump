@@ -204,6 +204,30 @@ printf("tdt %s\n",strTime(chk.tdttime,"%Y/%m/%d %H:%M:%S"));
 	return 0;
 }
 
+/* NIT TS 情報記述子に基づく地上波の送信形態（TR-B14 transmission_type_info） */
+static void fprint_terrestrial_transmission_xml(FILE *f, SVT_CONTROL *svt)
+{
+	if (svt->transmission_type_info == 0)
+		return;
+	fprintf(f, "    <transmission-type>%d</transmission-type>\n",
+	    (int)svt->transmission_type_info);
+	if (svt->transmission_type_info == 0x01)
+		fprintf(f, "    <full-seg>true</full-seg>\n");
+	else if (svt->transmission_type_info == 0x03)
+		fprintf(f, "    <full-seg>false</full-seg>\n");
+}
+
+static void fprint_terrestrial_transmission_json(FILE *f, SVT_CONTROL *svt)
+{
+	if (svt->transmission_type_info == 0)
+		return;
+	fprintf(f, ",\"transmission_type\":%d", (int)svt->transmission_type_info);
+	if (svt->transmission_type_info == 0x01)
+		fprintf(f, ",\"full_segment\":true");
+	else if (svt->transmission_type_info == 0x03)
+		fprintf(f, ",\"full_segment\":false");
+}
+
 /*
  * EIT を待たず NIT/SDT のみからサービス一覧を構築する。
  * （ISDBScanner のチャンネルメタ取得に相当する用途向け）
@@ -257,6 +281,7 @@ static void dumpXMLChannels(FILE *outfile)
 			fprintf(outfile, "       <SLOT>%d</SLOT>\n", getTSID2SLOT(svtcur->transport_stream_id));
 			fprintf(outfile, "    </satelliteinfo>\n");
 		}
+		fprint_terrestrial_transmission_xml(outfile, svtcur);
 		fprintf(outfile, "  </channel>\n");
 	}
 	fprintf(outfile, "</tv>\n");
@@ -290,6 +315,7 @@ static void dumpJSONChannels(FILE *outfile)
 			fprintf(outfile, ",\"frequency\":%d", svtcur->frequency);
 		if (svtcur->remote_control_key_id > 0)
 			fprintf(outfile, ",\"remote_control_key_id\":%d", svtcur->remote_control_key_id);
+		fprint_terrestrial_transmission_json(outfile, svtcur);
 		fprintf(outfile, "}");
 		comma = ",";
 	}
@@ -427,6 +453,7 @@ void	dumpXML(FILE *outfile)
 			fprintf(outfile, "       <SLOT>%d</SLOT>\n",getTSID2SLOT(svtcur->transport_stream_id));
 			fprintf(outfile, "    </satelliteinfo>\n");
 		}
+		fprint_terrestrial_transmission_xml(outfile, svtcur);
 		fprintf(outfile, "  </channel>\n");
 		svtcur=svtcur->next;
 	}
@@ -545,6 +572,7 @@ void dumpJSON(FILE *outfile)
 			fprintf(outfile,"\"TP\":\"%s%d\",",getTSID2BSCS(svtcur->transport_stream_id),getTSID2TP(svtcur->transport_stream_id));
 			fprintf(outfile,"\"SLOT\":%d},",getTSID2SLOT(svtcur->transport_stream_id));
 		}
+		fprint_terrestrial_transmission_json(outfile, svtcur);
 		eitcur = svtcur->eit;
 		fprintf(outfile,"\"programs\":[");
 		eitcanma="";

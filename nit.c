@@ -217,6 +217,31 @@ cur->remote_control_key_id = tsi->remote_control_key_id;
     return;
 }
 
+/* TS ?????????????????? transmission_type??????/1????/?????? */
+static void	setsdtTransmissionTypes(SVT_CONTROL *svttop, NITbody *nitb,
+    TSInformationDescriptor *tsi)
+{
+	SVT_CONTROL *cur;
+	int i, j, matched;
+
+	for (cur = svttop->next; cur != NULL; cur = cur->next) {
+		if (cur->transport_stream_id != nitb->transport_stream_id ||
+		    cur->original_network_id != nitb->original_network_id)
+			continue;
+		matched = 0;
+		for (i = 0; i < tsi->transmission_type_count && !matched; i++) {
+			for (j = 0; j < tsi->tstype[i].num_of_service; j++) {
+				if ((int)tsi->tstype[i].service_id[j] == cur->event_id) {
+					cur->transmission_type_info =
+					    tsi->tstype[i].transmission_type_info;
+					matched = 1;
+					break;
+				}
+			}
+		}
+	}
+}
+
 
 void dumpNIT(unsigned char *ptr, SVT_CONTROL *svttop)
 {
@@ -236,7 +261,7 @@ void dumpNIT(unsigned char *ptr, SVT_CONTROL *svttop)
     len = parseNIThead(ptr,&nith);
 
     ptr += len;
-    loop_len = nith.section_length - (len - 3 + 4); // 3は共通ヘッダ長 4はCRC
+    loop_len = nith.section_length - (len - 3 + 4); // 3????????????? 4??CRC
     while(loop_len > 0) {
         len = parseNITbody(ptr, &nitb);
         ptr += len;
@@ -276,6 +301,7 @@ void dumpNIT(unsigned char *ptr, SVT_CONTROL *svttop)
                 case 0xcd:
                     len = parseTSInformationDescriptor(ptr,&tsi);
                     setsdtTinfo(svttop,&nitb,&tsi);
+                    setsdtTransmissionTypes(svttop, &nitb, &tsi);
                     break;
                 case 0xfb:
                     len = parsePartialReceptionDescriptor(ptr);
