@@ -60,16 +60,16 @@ int parseSVCdesc(unsigned char *data, SVCdesc *desc) {
 
 	return desc->descriptor_length + 2;
 }
-int		searchid(SVT_CONTROL *top, int service_id)
+static SVT_CONTROL *find_svt(SVT_CONTROL *top, int service_id)
 {
-	SVT_CONTROL	*cur = top ;
-	while(cur != NULL){
-		if(cur->event_id == service_id){
-			return 1 ;
-		}
-		cur = cur->next ;
+	SVT_CONTROL *cur = top->next;
+
+	while (cur != NULL) {
+		if (cur->event_id == service_id)
+			return cur;
+		cur = cur->next;
 	}
-	return 0 ;
+	return NULL;
 }
 
 void	enqueue_sdt(SVT_CONTROL *top, SVT_CONTROL *sdtptr)
@@ -114,7 +114,6 @@ void dumpSDT(unsigned char *ptr, SVT_CONTROL *top)
 	SDTbody  sdtb;
 	SVCdesc  desc;
 	SVT_CONTROL	*svtptr ;
-	int		rc ;
 
 	int len = 0;
 	int loop_len = 0;
@@ -129,14 +128,15 @@ void dumpSDT(unsigned char *ptr, SVT_CONTROL *top)
 		loop_len -= len;
 		parseSVCdesc(ptr, &desc);
 
-		rc = searchid(top, sdtb.service_id);
-		if(rc == 0){
+		svtptr = find_svt(top, sdtb.service_id);
+		if (svtptr == NULL) {
 			svtptr = calloc(1, sizeof(SVT_CONTROL));
 			svtptr->event_id = sdtb.service_id;
 			svtptr->original_network_id = sdth.original_network_id;
 			svtptr->transport_stream_id = sdth.transport_stream_id;
-			svtptr->event_id = sdtb.service_id;
-			memcpy(svtptr->servicename, desc.service_name, strlen(desc.service_name));
+			if (desc.service_name[0] != '\0')
+				strncpy(svtptr->servicename, desc.service_name,
+				    sizeof(svtptr->servicename) - 1);
 			enqueue_sdt(top, svtptr);
 #if DEBUG
 			printf("SDT=%s,%d,%x,%x,%x,%x,%x,%x,%x\n",
@@ -160,6 +160,12 @@ void dumpSDT(unsigned char *ptr, SVT_CONTROL *top)
 					sdth.section_number, sdth.last_section_number, sdth.original_network_id,
 					sdth.reserved_future_use2);
 #endif
+		} else {
+			svtptr->original_network_id = sdth.original_network_id;
+			svtptr->transport_stream_id = sdth.transport_stream_id;
+			if (desc.service_name[0] != '\0')
+				strncpy(svtptr->servicename, desc.service_name,
+				    sizeof(svtptr->servicename) - 1);
 		}
 
 		ptr += sdtb.descriptors_loop_length;

@@ -22,6 +22,8 @@
 
 SVT_CONTROL	*svttop = NULL;
 #define		SECCOUNT	10
+/* NIT/SDT のカルセルから複数セクションを拾うための読み取り秒数 */
+#define		CHANNEL_SCAN_SEC	15
 char	title[1024];
 char	subtitle[1024];
 char	Category[1024];
@@ -201,6 +203,99 @@ printf("tdt %s\n",strTime(chk.tdttime,"%Y/%m/%d %H:%M:%S"));
 	}
 	return 0;
 }
+
+/*
+ * EIT を待たず NIT/SDT のみからサービス一覧を構築する。
+ * （ISDBScanner のチャンネルメタ取得に相当する用途向け）
+ */
+static int GetChannelListFromTS(FILE *infile, SECcache *secs, int count)
+{
+	SECcache *bsecs;
+	int pid;
+	time_t waitend = time(NULL) + CHANNEL_SCAN_SEC;
+
+	while ((bsecs = readTS(infile, secs, count)) != NULL) {
+		pid = bsecs->pid & 0xFF;
+		switch (pid) {
+		case 0x10:
+			dumpNIT(bsecs->buf, svttop);
+			break;
+		case 0x11:
+			dumpSDT(bsecs->buf, svttop);
+			break;
+		}
+		if (time(NULL) >= waitend)
+			return 0;
+	}
+	return 0;
+}
+
+static void dumpXMLChannels(FILE *outfile)
+{
+	SVT_CONTROL *svtcur;
+
+	fprintf(outfile, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+	fprintf(outfile, "<!DOCTYPE tv SYSTEM \"xmltv.dtd\">\n\n");
+	fprintf(outfile, "<tv generator-info-name=\"tsEPG2xml-channels\" generator-info-url=\"http://localhost/\">\n");
+
+	for (svtcur = svttop->next; svtcur != NULL; svtcur = svtcur->next) {
+		memset(ServiceName, '\0', sizeof(ServiceName));
+		if (svtcur->servicename[0] != '\0')
+			strcpy(ServiceName, svtcur->servicename);
+		xmlspecialchars(ServiceName);
+
+		fprintf(outfile, "  <channel id=\"%s_%d\" transport_stream_id=\"%d\" original_network_id=\"%d\" service_id=\"%d\">\n",
+		    getBSCSGR(svtcur), svtcur->event_id, svtcur->transport_stream_id,
+		    svtcur->original_network_id, svtcur->event_id);
+		fprintf(outfile, "    <display-name lang=\"ja_JP\">%s</display-name>\n", ServiceName);
+		if (svtcur->original_network_id < 0x0010) {
+			fprintf(outfile, "    <satelliteinfo>\n");
+			if (svtcur->frequency > 0)
+				fprintf(outfile, "       <frequency>%d</frequency>\n", svtcur->frequency);
+			fprintf(outfile, "       <TP>%s%d</TP>\n", getTSID2BSCS(svtcur->transport_stream_id),
+			    getTSID2TP(svtcur->transport_stream_id));
+			fprintf(outfile, "       <SLOT>%d</SLOT>\n", getTSID2SLOT(svtcur->transport_stream_id));
+			fprintf(outfile, "    </satelliteinfo>\n");
+		}
+		fprintf(outfile, "  </channel>\n");
+	}
+	fprintf(outfile, "</tv>\n");
+}
+
+static void dumpJSONChannels(FILE *outfile)
+{
+	SVT_CONTROL *svtcur;
+	char *comma = "";
+	char namebuf[1024];
+
+	fprintf(outfile, "[");
+	for (svtcur = svttop->next; svtcur != NULL; svtcur = svtcur->next) {
+		fprintf(outfile, "%s{", comma);
+		fprintf(outfile, "\"id\":\"%s_%d\",", getBSCSGR(svtcur), svtcur->event_id);
+		fprintf(outfile, "\"transport_stream_id\":%d,", svtcur->transport_stream_id);
+		fprintf(outfile, "\"original_network_id\":%d,", svtcur->original_network_id);
+		fprintf(outfile, "\"service_id\":%d,", svtcur->event_id);
+		memset(namebuf, '\0', sizeof(namebuf));
+		if (svtcur->servicename[0] != '\0')
+			strcpy(namebuf, svtcur->servicename);
+		strrep(namebuf, "\"", "\\\"");
+		fprintf(outfile, "\"name\":\"%s\"", namebuf);
+		if (svtcur->original_network_id < 0x0010) {
+			fprintf(outfile, ",\"satelliteinfo\":{");
+			fprintf(outfile, "\"TP\":\"%s%d\",", getTSID2BSCS(svtcur->transport_stream_id),
+			    getTSID2TP(svtcur->transport_stream_id));
+			fprintf(outfile, "\"SLOT\":%d}", getTSID2SLOT(svtcur->transport_stream_id));
+		}
+		if (svtcur->frequency > 0)
+			fprintf(outfile, ",\"frequency\":%d", svtcur->frequency);
+		if (svtcur->remote_control_key_id > 0)
+			fprintf(outfile, ",\"remote_control_key_id\":%d", svtcur->remote_control_key_id);
+		fprintf(outfile, "}");
+		comma = ",";
+	}
+	fprintf(outfile, "]\n");
+}
+
 void	dumpChannel(FILE *outfile)
 {
 	SVT_CONTROL	*svtcur ;
@@ -548,6 +643,8 @@ int main(int argc, char *argv[])
 	int   inclose = 0;
 	int   outclose = 0;
 	int	ret;
+	int	channels_only = 0;
+	int	channels_json = 0;
 	SECcache   secs[SECCOUNT];
 
 
@@ -562,25 +659,41 @@ int main(int argc, char *argv[])
 	secs[6].pid = 0x13; /* RST */
 	secs[7].pid = 0x24; /* BIT */
 
-    file = NULL;
-    fileout= NULL;
+	file = NULL;
+	fileout = NULL;
 	if (argc > 2) {
-    if (argc == 3) {
-        file = argv[1];
-        fileout = argv[2];
-    }
-    else {
-        file = argv[2];
-        fileout = argv[3];
-   }
-		if(strcmp(file, "-")) {
+		if (strcmp(argv[1], "channels") == 0) {
+			if (argc == 4) {
+				channels_only = 1;
+				file = argv[2];
+				fileout = argv[3];
+			} else if (argc == 5 && strcmp(argv[2], "json") == 0) {
+				channels_only = 1;
+				channels_json = 1;
+				file = argv[3];
+				fileout = argv[4];
+			} else {
+				fprintf(stderr,
+				    "Usage: %s channels <tsFile> <outfile>\n"
+				    "       %s channels json <tsFile> <outfile>\n",
+				    argv[0], argv[0]);
+				return 1;
+			}
+		} else if (argc == 3) {
+			file = argv[1];
+			fileout = argv[2];
+		} else {
+			file = argv[2];
+			fileout = argv[3];
+		}
+		if (strcmp(file, "-")) {
 			infile = fopen(file, "r");
 			inclose = 1;
 		}
-	if(infile == NULL){
-		fprintf(stderr, "Can't open file: %s\n", file);
-		return 1;
-	}
+		if (infile == NULL) {
+			fprintf(stderr, "Can't open file: %s\n", file);
+			return 1;
+		}
 	}
 
 	if(argc == 6 && ((strcmp(argv[1], "check") == 0)||(strcmp(argv[1],"wait"))==0)){
@@ -609,10 +722,13 @@ int main(int argc, char *argv[])
 		fprintf(stdout, "Usage : %s <tsFile> <outfile>\n", argv[0]);
 		fprintf(stdout, "Usage : %s csv  <tsFile> <outfile>\n", argv[0]);
 		fprintf(stdout, "Usage : %s json <tsFile> <outfile>\n", argv[0]);
+		fprintf(stdout, "Usage : %s channels <tsFile> <outfile>\n", argv[0]);
+		fprintf(stdout, "Usage : %s channels json <tsFile> <outfile>\n", argv[0]);
 		fprintf(stdout, "Usage : %s check <device> <sid> <eventid> <eventtime>\n", argv[0]);
 		fprintf(stdout, "Usage : %s wait <device> <sid> <eventid> <maxwaitsec>\n", argv[0]);
 		fprintf(stdout, "  csv        csv  output mode\n");
 		fprintf(stdout, "  json       json output mode\n");
+		fprintf(stdout, "  channels   NIT/SDT のみで全サービス名を出力 (EIT なし)\n");
 		fprintf(stdout, "  check      check event\n");
 		fprintf(stdout, "  wait       wait  event\n");
 		fprintf(stdout, "VERSION : %s\n",VERSION);
@@ -621,15 +737,28 @@ int main(int argc, char *argv[])
 
 	svttop = calloc(1, sizeof(SVT_CONTROL));
 
-	ret = GetSDTEITInfo(infile, secs, SECCOUNT);
+	if (channels_only) {
+		SECcache ch_secs[2];
 
-	if(strcmp(argv[1], "csv") == 0){
+		memset(ch_secs, 0, sizeof(ch_secs));
+		ch_secs[0].pid = 0x10;
+		ch_secs[1].pid = 0x11;
+		ret = GetChannelListFromTS(infile, ch_secs, 2);
+	} else
+		ret = GetSDTEITInfo(infile, secs, SECCOUNT);
+
+	if (channels_only) {
+		if (channels_json)
+			dumpJSONChannels(outfile);
+		else
+			dumpXMLChannels(outfile);
+	} else if (strcmp(argv[1], "csv") == 0) {
 		dumpCSV(outfile);
-	}else if (strcmp(argv[1], "csvc") == 0){
+	} else if (strcmp(argv[1], "csvc") == 0) {
 		dumpChannel(outfile);
-	}else if (strcmp(argv[1], "json") == 0){
+	} else if (strcmp(argv[1], "json") == 0) {
 		dumpJSON(outfile);
-	}else{
+	} else {
 		dumpXML(outfile);
 	}
 	if(inclose) fclose(infile);
