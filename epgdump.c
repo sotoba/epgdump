@@ -573,6 +573,9 @@ void dumpJSON(FILE *outfile)
 			fprintf(outfile,"\"SLOT\":%d},",getTSID2SLOT(svtcur->transport_stream_id));
 		}
 		fprint_terrestrial_transmission_json(outfile, svtcur);
+		/* transmission 出力は先頭が ',' のみで末尾に ',' がないため programs 直前で区切る */
+		if (svtcur->transmission_type_info != 0)
+			fprintf(outfile, ",");
 		eitcur = svtcur->eit;
 		fprintf(outfile,"\"programs\":[");
 		eitcanma="";
