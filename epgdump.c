@@ -217,11 +217,19 @@ static void fprint_terrestrial_transmission_xml(FILE *f, SVT_CONTROL *svt)
 		fprintf(f, "    <full-seg>false</full-seg>\n");
 }
 
-static void fprint_terrestrial_transmission_json(FILE *f, SVT_CONTROL *svt)
+/*
+ * leading_comma: dumpJSON は直前のフィールドが既に ',' で終わるため 0。
+ * dumpJSONChannels は \"name\" 等が ',' 無しで終わる場合があるため 1。
+ */
+static void fprint_terrestrial_transmission_json(FILE *f, SVT_CONTROL *svt,
+    int leading_comma)
 {
 	if (svt->transmission_type_info == 0)
 		return;
-	fprintf(f, ",\"transmission_type\":%d", (int)svt->transmission_type_info);
+	if (leading_comma)
+		fprintf(f, ",\"transmission_type\":%d", (int)svt->transmission_type_info);
+	else
+		fprintf(f, "\"transmission_type\":%d", (int)svt->transmission_type_info);
 	if (svt->transmission_type_info == 0x01)
 		fprintf(f, ",\"full_segment\":true");
 	else if (svt->transmission_type_info == 0x03)
@@ -315,7 +323,7 @@ static void dumpJSONChannels(FILE *outfile)
 			fprintf(outfile, ",\"frequency\":%d", svtcur->frequency);
 		if (svtcur->remote_control_key_id > 0)
 			fprintf(outfile, ",\"remote_control_key_id\":%d", svtcur->remote_control_key_id);
-		fprint_terrestrial_transmission_json(outfile, svtcur);
+		fprint_terrestrial_transmission_json(outfile, svtcur, 1);
 		fprintf(outfile, "}");
 		comma = ",";
 	}
@@ -572,8 +580,8 @@ void dumpJSON(FILE *outfile)
 			fprintf(outfile,"\"TP\":\"%s%d\",",getTSID2BSCS(svtcur->transport_stream_id),getTSID2TP(svtcur->transport_stream_id));
 			fprintf(outfile,"\"SLOT\":%d},",getTSID2SLOT(svtcur->transport_stream_id));
 		}
-		fprint_terrestrial_transmission_json(outfile, svtcur);
-		/* transmission 出力は先頭が ',' のみで末尾に ',' がないため programs 直前で区切る */
+		fprint_terrestrial_transmission_json(outfile, svtcur, 0);
+		/* transmission 出力は末尾に ',' がないため programs 直前で区切る */
 		if (svtcur->transmission_type_info != 0)
 			fprintf(outfile, ",");
 		eitcur = svtcur->eit;
