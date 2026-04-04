@@ -92,6 +92,7 @@ epgdump wait <device> <sid> <eventid> <maxwaitsec>
 
 - **`channels` / `channels json`**: NIT+SDT のみで短時間スキャンし、番組情報なしでサービス一覧を出力。
 - **地上波のフルセグ / 1セグ**: NIT の TS 情報記述子（ARIB TR-B14 の `transmission_type_info`）をサービス ID に対応付け、XML/JSON のチャンネル情報に `transmission_type` および `full_segment`（値 0x01 / 0x03 のとき）を付与。
+- **JSON の `transmission_type`（実装メモ）**: 番組表 `epgdump json` では `name` が既に `,` で終わるため、`,"transmission_type"` をそのまま挟むと **二重カンマ**になる。`channels json` では直前のキーが `,` 無しで終わる場合がある。**`fprint_terrestrial_transmission_json(..., leading_comma)`** で両者を分ける。また `transmission_type` ブロックの末尾に `,` が無いと **`"programs"` と連結**して JSON が壊れるため、`transmission_type_info != 0` のときだけ `programs` 直前に `,` を補う。
 - **SDT の複数セクション**: 同一サービスが再通知された場合に名前・ONID・TSID を更新し、セクション分割された SDT でも取りこぼしにくくしています。
 - **EIT とサービス一覧の整合（SDT 未到達チャンネル）**: 従来実装では、SDT でまだ登録されていない `service_id` の EIT を受け取ると打ち切り（`EIT_SDTNOTFOUND`）になっていました。本 fork では、その場合に **サービス用のエントリを新規作成してリストへ追加**し、続けて EIT を解釈します。地方局などで **SDT に載らない／後から載るチャンネルの EIT だけが先に流れる**ようなケースでも、番組表を取りこぼしにくくするための変更です。あわせて `check` 用の時刻差表示・JSON の開始/終了時刻・音声コンポーネント記述子の取り扱い（空でないときだけ `strdup`）など、`time_t` や文字列まわりの細かな修正を含みます。
 
